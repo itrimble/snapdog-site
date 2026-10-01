@@ -239,6 +239,76 @@
       if (reduce) frame(3600); else run(fig, 7600, frame);
     },
 
+    // On-device analysis. Text boxes and outputs are what SnapDog's built-in
+    // mode (Apple Vision: VNRecognizeTextRequest + VNClassifyImageRequest)
+    // returns for this sample page; long outputs are truncated with "…".
+    analyze(fig) {
+      const { svg, defs, id } = base(fig, 'Animated illustration: on-device analysis finds the text on a sample page, then shows the extracted text, a description, and a suggested filename, all computed on the Mac without a network connection');
+      const BOXES = [[101,93,625,50],[98,253,147,40],[98,336,205,42],[98,416,104,40],[529,256,155,42],[544,336,345,45],[529,418,353,53],
+        [145,577,331,60],[1318,593,353,30],[115,772,69,29],[1045,772,53,32],[1588,766,139,40],[119,863,201,40],[1045,865,21,29],[1609,857,115,43],
+        [119,956,204,41],[1045,959,21,29],[1606,952,118,45],[117,1050,284,39],[1048,1055,13,24],[1609,1046,115,47]];
+      const SANS = '-apple-system,BlinkMacSystemFont,system-ui,sans-serif', MONO = 'ui-monospace,"SF Mono",Menlo,monospace';
+      const boxes = BOXES.map(([x, y, w, h]) => el('rect', { x: x - 8, y: y - 6, width: w + 16, height: h + 12, rx: 10,
+        fill: 'rgba(10,132,255,.14)', stroke: '#0a84ff', 'stroke-width': 3 }, svg));
+      const scan = el('g', {}, svg);
+      const grad = el('linearGradient', { id: id + 'g', x1: 0, y1: 0, x2: 0, y2: 1 }, defs);
+      el('stop', { offset: 0, 'stop-color': '#0a84ff', 'stop-opacity': 0 }, grad);
+      el('stop', { offset: 1, 'stop-color': '#0a84ff', 'stop-opacity': .28 }, grad);
+      el('rect', { x: 0, y: -120, width: W, height: 120, fill: `url(#${id}g)` }, scan);
+      el('rect', { x: 0, y: -4, width: W, height: 5, fill: '#0a84ff' }, scan);
+      const dim = el('rect', { width: W, height: H, fill: 'rgba(8,14,26,.5)' }, svg);
+
+      const card = el('g', { filter: `url(#${id}s)` }, svg);
+      el('rect', { x: 170, y: 70, width: 1500, height: 1084, rx: 40, fill: '#fff' }, card);
+      const text = (x, y, size, attrs = {}) => el('text', { x, y, 'font-size': size, 'font-family': SANS, fill: '#111827', ...attrs }, card);
+      text(240, 168, 54, { 'font-weight': 750 }).textContent = 'On-device analysis';
+      el('rect', { x: 1150, y: 118, width: 450, height: 66, rx: 33, fill: '#e3f6ee' }, card);
+      el('circle', { cx: 1192, cy: 151, r: 11, fill: '#18a172' }, card);
+      text(1218, 163, 33, { fill: '#087650', 'font-weight': 650 }).textContent = 'Offline · Apple Vision';
+      el('rect', { x: 240, y: 212, width: 1360, height: 3, fill: '#e5e7eb' }, card);
+      const chip = (y, label) => text(240, y, 30, { fill: '#18a172', 'font-weight': 800, 'letter-spacing': 3 }).textContent = label;
+      chip(278, 'EXTRACT TEXT');
+      chip(632, 'DESCRIBE');
+      chip(902, 'SUGGEST FILENAME');
+      // Each section: [first line y, line height, font, lines]
+      const SECTIONS = [
+        [344, 56, { 'font-family': MONO, 'font-size': 42 }, ['Order #4417 Acme Internal • Fulfilment', 'Customer', 'Account email', '… 18 more lines']],
+        [696, 58, { 'font-size': 44 }, ['This 1840×1224 capture appears to contain', 'document, screenshot. Visible text includes', '“Order #4417 Acme Internal • Fulfilment …”']],
+        [978, 0, { 'font-family': MONO, 'font-size': 48, 'font-weight': 650, fill: '#0b5cc8' }, ['order-4417-acme-internal-fulfilment']],
+      ];
+      el('rect', { x: 226, y: 924, width: 1388, height: 82, rx: 16, fill: '#eef4ff' }, card);
+      const typed = SECTIONS.map(([y0, lh, attrs, lines]) => lines.map((line, i) => {
+        const t = text(240, y0 + i * lh, attrs['font-size'], attrs);
+        if (line.startsWith('…')) t.setAttribute('fill', '#6b7280');
+        return { t, line };
+      }));
+      text(240, 1104, 32, { fill: '#6b7280' }).textContent = 'No account, API key, model download, or network connection.';
+
+      const type = (rows, p) => {
+        const total = rows.reduce((n, r) => n + r.line.length, 0);
+        let left = Math.round(total * p);
+        for (const r of rows) { r.t.textContent = r.line.slice(0, Math.max(0, left)); left -= r.line.length; }
+      };
+      const frame = t => {
+        const fade = 1 - seg(t, 12000, 12700);
+        const sy = lerp(-10, H + 130, seg(t, 300, 2700));
+        scan.setAttribute('transform', `translate(0 ${sy})`);
+        scan.style.opacity = t < 2800 ? 1 : 0;
+        boxes.forEach((b, i) => {
+          const cy = BOXES[i][1] + BOXES[i][3] / 2;
+          b.style.opacity = (sy > cy ? 1 : 0) * (1 - seg(t, 3000, 3400)) * fade;
+        });
+        dim.style.opacity = seg(t, 2900, 3400) * fade;
+        const pop = seg(t, 3300, 3750);
+        card.style.opacity = pop * fade;
+        card.setAttribute('transform', `translate(${W / 2} ${H / 2}) scale(${lerp(.94, 1, pop)}) translate(${-W / 2} ${-H / 2})`);
+        type(typed[0], seg(t, 3800, 5600));
+        type(typed[1], seg(t, 5800, 8200));
+        type(typed[2], seg(t, 8400, 9500));
+      };
+      if (reduce) frame(11000); else run(fig, 13000, frame);
+    },
+
     compare(fig) {
       const { svg, defs, id } = base(fig, 'Before and after: the same sample page, plain and annotated with an arrow, numbered steps, a highlight and a blurred email address');
       const clip = el('clipPath', { id: id + 'k' }, defs);
