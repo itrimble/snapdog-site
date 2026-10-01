@@ -15,6 +15,9 @@
   };
   const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
   let uid = 0;
+  // Label scale for the demo being built: 2 when the figure is phone-sized,
+  // so badges and captions stay legible once the 1840-unit canvas shrinks.
+  let K = 1;
 
   const el = (name, attrs = {}, parent) => {
     const n = document.createElementNS(NS, name);
@@ -28,15 +31,17 @@
   const seg = (t, a, b) => ease(clamp((t - a) / (b - a)));
   const lerp = (a, b, p) => a + (b - a) * p;
 
-  function base(fig, label) {
+  // `h` / `iy`: a taller canvas (phone layout) with the page drawn at y = iy.
+  function base(fig, label, h = H, iy = 0) {
     const id = 'sd' + (++uid);
-    const svg = el('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': label });
+    const svg = el('svg', { viewBox: `0 0 ${W} ${h}`, role: 'img', 'aria-label': label });
+    if (h !== H) fig.style.aspectRatio = `${W} / ${h}`;
     const defs = el('defs', {}, svg);
     const blur = el('filter', { id: id + 'b', x: '-5%', y: '-20%', width: '110%', height: '140%' }, defs);
     el('feGaussianBlur', { stdDeviation: 13 }, blur);
     const shadow = el('filter', { id: id + 's', x: '-20%', y: '-20%', width: '140%', height: '160%' }, defs);
     el('feDropShadow', { dx: 0, dy: 10, stdDeviation: 14, 'flood-opacity': .22 }, shadow);
-    el('image', { href: IMG, width: W, height: H }, svg);
+    el('image', { href: IMG, y: iy, width: W, height: H }, svg);
     fig.querySelector('img')?.remove();
     fig.prepend(svg);
     return { svg, defs, id };
@@ -91,6 +96,7 @@
   const moveCursor = (c, x, y) => c.setAttribute('transform', `translate(${x} ${y})`);
 
   function badge(svg, id) {
+    const k = K;
     const g = el('g', { filter: `url(#${id}s)` }, svg);
     const r = el('rect', { height: 56, rx: 14, fill: 'rgba(17,24,39,.9)' }, g);
     const t = el('text', { x: 20, y: 38, fill: '#fff', 'font-size': 30, 'font-weight': 650,
@@ -99,7 +105,8 @@
       t.textContent = text;
       const w = text.length * 18.2 + 40;
       r.setAttribute('width', w);
-      g.setAttribute('transform', `translate(${x} ${y})`);
+      x = clamp(x, 10, W - w * k - 10); y = clamp(y, 10, H - 56 * k - 10);
+      g.setAttribute('transform', `translate(${x} ${y}) scale(${k})`);
     } };
   }
 
@@ -177,7 +184,7 @@
         cur.style.opacity = t > 9800 ? fade : 1;
         // 3. Share.
         const up = seg(t, 7600, 8000) * (1 - seg(t, 9800, 10200));
-        toast.setAttribute('transform', `translate(${W / 2} ${lerp(H + 60, H - 110, up)})`);
+        toast.setAttribute('transform', `translate(${W / 2} ${lerp(H + 60 * K, H - 110 * K, up)}) scale(${K})`);
         toast.style.opacity = up;
       };
       if (reduce) {
@@ -243,46 +250,66 @@
     // mode (Apple Vision: VNRecognizeTextRequest + VNClassifyImageRequest)
     // returns for this sample page; long outputs are truncated with "…".
     analyze(fig) {
-      const { svg, defs, id } = base(fig, 'Animated illustration: on-device analysis finds the text on a sample page, then shows the extracted text, a description, and a suggested filename, all computed on the Mac without a network connection');
+      // Phone layout: a taller canvas so the results card can use larger
+      // type with shorter lines; the page sits in the middle while scanning.
+      const PH = K > 1 ? 2000 : H, iy = (PH - H) / 2;
+      const { svg, defs, id } = base(fig, 'Animated illustration: on-device analysis finds the text on a sample page, then shows the extracted text, a description, and a suggested filename, all computed on the Mac without a network connection', PH, iy);
       const BOXES = [[101,93,625,50],[98,253,147,40],[98,336,205,42],[98,416,104,40],[529,256,155,42],[544,336,345,45],[529,418,353,53],
         [145,577,331,60],[1318,593,353,30],[115,772,69,29],[1045,772,53,32],[1588,766,139,40],[119,863,201,40],[1045,865,21,29],[1609,857,115,43],
         [119,956,204,41],[1045,959,21,29],[1606,952,118,45],[117,1050,284,39],[1048,1055,13,24],[1609,1046,115,47]];
       const SANS = '-apple-system,BlinkMacSystemFont,system-ui,sans-serif', MONO = 'ui-monospace,"SF Mono",Menlo,monospace';
+      const page = el('g', { transform: `translate(0 ${iy})` }, svg);
       const boxes = BOXES.map(([x, y, w, h]) => el('rect', { x: x - 8, y: y - 6, width: w + 16, height: h + 12, rx: 10,
-        fill: 'rgba(10,132,255,.14)', stroke: '#0a84ff', 'stroke-width': 3 }, svg));
-      const scan = el('g', {}, svg);
+        fill: 'rgba(10,132,255,.14)', stroke: '#0a84ff', 'stroke-width': 3 }, page));
+      const scan = el('g', {}, page);
       const grad = el('linearGradient', { id: id + 'g', x1: 0, y1: 0, x2: 0, y2: 1 }, defs);
       el('stop', { offset: 0, 'stop-color': '#0a84ff', 'stop-opacity': 0 }, grad);
       el('stop', { offset: 1, 'stop-color': '#0a84ff', 'stop-opacity': .28 }, grad);
       el('rect', { x: 0, y: -120, width: W, height: 120, fill: `url(#${id}g)` }, scan);
       el('rect', { x: 0, y: -4, width: W, height: 5, fill: '#0a84ff' }, scan);
-      const dim = el('rect', { width: W, height: H, fill: 'rgba(8,14,26,.5)' }, svg);
+      const dim = el('rect', { width: W, height: PH, fill: 'rgba(8,14,26,.5)' }, svg);
 
+      const EXTRACT = ['Order #4417 Acme Internal • Fulfilment', 'Customer', 'Account email', '… 18 more lines'];
+      const FILENAME = ['order-4417-acme-internal-fulfilment'];
+      // Layout per size: card box, x inset, and each element's y / size.
+      const L = K > 1 ? {
+        card: [40, 50, 1760, 1900], x: 110,
+        title: [210, 100], pill: [270, 820, 100, 60], rule: 430,
+        chips: [[530, 'EXTRACT TEXT'], [990, 'DESCRIBE'], [1500, 'SUGGEST FILENAME']], chip: 52,
+        sections: [
+          [620, 84, { 'font-family': MONO, 'font-size': 62 }, EXTRACT],
+          [1080, 92, { 'font-size': 70 }, ['This 1840×1224 capture appears to', 'contain document, screenshot. Visible', 'text includes “Order #4417 Acme', 'Internal • Fulfilment …”']],
+          [1630, 0, { 'font-family': MONO, 'font-size': 66, 'font-weight': 650, fill: '#0b5cc8' }, FILENAME]],
+        fileBox: [1540, 136], foot: [1790, 56, ['No account, API key, model download,', 'or network connection.'], 76],
+      } : {
+        card: [170, 70, 1500, 1084], x: 240,
+        title: [168, 54], pill: [118, 450, 66, 33], pillX: 1150, rule: 212,
+        chips: [[278, 'EXTRACT TEXT'], [632, 'DESCRIBE'], [902, 'SUGGEST FILENAME']], chip: 30,
+        sections: [
+          [344, 56, { 'font-family': MONO, 'font-size': 42 }, EXTRACT],
+          [696, 58, { 'font-size': 44 }, ['This 1840×1224 capture appears to contain', 'document, screenshot. Visible text includes', '“Order #4417 Acme Internal • Fulfilment …”']],
+          [978, 0, { 'font-family': MONO, 'font-size': 48, 'font-weight': 650, fill: '#0b5cc8' }, FILENAME]],
+        fileBox: [924, 82], foot: [1104, 32, ['No account, API key, model download, or network connection.'], 0],
+      };
+      const [cx0, cy0, cw, ch] = L.card, X = L.x, inner = cw - 2 * (X - cx0);
       const card = el('g', { filter: `url(#${id}s)` }, svg);
-      el('rect', { x: 170, y: 70, width: 1500, height: 1084, rx: 40, fill: '#fff' }, card);
+      el('rect', { x: cx0, y: cy0, width: cw, height: ch, rx: 40, fill: '#fff' }, card);
       const text = (x, y, size, attrs = {}) => el('text', { x, y, 'font-size': size, 'font-family': SANS, fill: '#111827', ...attrs }, card);
-      text(240, 168, 54, { 'font-weight': 750 }).textContent = 'On-device analysis';
-      el('rect', { x: 1150, y: 118, width: 450, height: 66, rx: 33, fill: '#e3f6ee' }, card);
-      el('circle', { cx: 1192, cy: 151, r: 11, fill: '#18a172' }, card);
-      text(1218, 163, 33, { fill: '#087650', 'font-weight': 650 }).textContent = 'Offline · Apple Vision';
-      el('rect', { x: 240, y: 212, width: 1360, height: 3, fill: '#e5e7eb' }, card);
-      const chip = (y, label) => text(240, y, 30, { fill: '#18a172', 'font-weight': 800, 'letter-spacing': 3 }).textContent = label;
-      chip(278, 'EXTRACT TEXT');
-      chip(632, 'DESCRIBE');
-      chip(902, 'SUGGEST FILENAME');
-      // Each section: [first line y, line height, font, lines]
-      const SECTIONS = [
-        [344, 56, { 'font-family': MONO, 'font-size': 42 }, ['Order #4417 Acme Internal • Fulfilment', 'Customer', 'Account email', '… 18 more lines']],
-        [696, 58, { 'font-size': 44 }, ['This 1840×1224 capture appears to contain', 'document, screenshot. Visible text includes', '“Order #4417 Acme Internal • Fulfilment …”']],
-        [978, 0, { 'font-family': MONO, 'font-size': 48, 'font-weight': 650, fill: '#0b5cc8' }, ['order-4417-acme-internal-fulfilment']],
-      ];
-      el('rect', { x: 226, y: 924, width: 1388, height: 82, rx: 16, fill: '#eef4ff' }, card);
-      const typed = SECTIONS.map(([y0, lh, attrs, lines]) => lines.map((line, i) => {
-        const t = text(240, y0 + i * lh, attrs['font-size'], attrs);
+      text(X, L.title[0], L.title[1], { 'font-weight': 750 }).textContent = 'On-device analysis';
+      const [py, pw, ph, pf] = L.pill, px = L.pillX ?? X;
+      el('rect', { x: px, y: py, width: pw, height: ph, rx: ph / 2, fill: '#e3f6ee' }, card);
+      el('circle', { cx: px + ph * .64, cy: py + ph / 2, r: ph / 6, fill: '#18a172' }, card);
+      text(px + ph * 1.04, py + ph / 2 + pf * .36, pf, { fill: '#087650', 'font-weight': 650 }).textContent = 'Offline · Apple Vision';
+      el('rect', { x: X, y: L.rule, width: inner, height: 3, fill: '#e5e7eb' }, card);
+      for (const [y, label] of L.chips) text(X, y, L.chip, { fill: '#18a172', 'font-weight': 800, 'letter-spacing': 3 }).textContent = label;
+      el('rect', { x: X - 14, y: L.fileBox[0], width: inner + 28, height: L.fileBox[1], rx: 16, fill: '#eef4ff' }, card);
+      const typed = L.sections.map(([y0, lh, attrs, lines]) => lines.map((line, i) => {
+        const t = text(X, y0 + i * lh, attrs['font-size'], attrs);
         if (line.startsWith('…')) t.setAttribute('fill', '#6b7280');
         return { t, line };
       }));
-      text(240, 1104, 32, { fill: '#6b7280' }).textContent = 'No account, API key, model download, or network connection.';
+      const [fy, fs, flines, flh] = L.foot;
+      flines.forEach((line, i) => { text(X, fy + i * flh, fs, { fill: '#6b7280' }).textContent = line; });
 
       const type = (rows, p) => {
         const total = rows.reduce((n, r) => n + r.line.length, 0);
@@ -301,7 +328,7 @@
         dim.style.opacity = seg(t, 2900, 3400) * fade;
         const pop = seg(t, 3300, 3750);
         card.style.opacity = pop * fade;
-        card.setAttribute('transform', `translate(${W / 2} ${H / 2}) scale(${lerp(.94, 1, pop)}) translate(${-W / 2} ${-H / 2})`);
+        card.setAttribute('transform', `translate(${W / 2} ${PH / 2}) scale(${lerp(.94, 1, pop)}) translate(${-W / 2} ${-PH / 2})`);
         type(typed[0], seg(t, 3800, 5600));
         type(typed[1], seg(t, 5800, 8200));
         type(typed[2], seg(t, 8400, 9500));
@@ -321,7 +348,7 @@
       el('circle', { cy: H / 2, r: 40, fill: '#fff', filter: `url(#${id}s)` }, line);
       el('path', { d: `M -12 ${H / 2 - 14} l -14 14 l 14 14 M 12 ${H / 2 - 14} l 14 14 l -14 14`, fill: 'none', stroke: '#111', 'stroke-width': 5, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }, line);
       const tag = (txt, x, anchor) => {
-        const t = el('text', { x, y: 1150, 'text-anchor': anchor, fill: '#fff', 'font-size': 40, 'font-weight': 750, 'letter-spacing': 2, stroke: 'rgba(17,24,39,.85)', 'stroke-width': 10, 'paint-order': 'stroke',
+        const t = el('text', { x, y: 1150, 'text-anchor': anchor, fill: '#fff', 'font-size': 40 * K, 'font-weight': 750, 'letter-spacing': 2, stroke: 'rgba(17,24,39,.85)', 'stroke-width': 10, 'paint-order': 'stroke',
           'font-family': '-apple-system,BlinkMacSystemFont,system-ui,sans-serif' }, svg);
         t.textContent = txt;
       };
@@ -352,7 +379,10 @@
     },
   };
 
-  document.querySelectorAll('.sd-demo[data-demo]').forEach(fig => DEMOS[fig.dataset.demo]?.(fig));
+  document.querySelectorAll('.sd-demo[data-demo]').forEach(fig => {
+    K = fig.clientWidth > 0 && fig.clientWidth < 560 ? 2 : 1;
+    DEMOS[fig.dataset.demo]?.(fig);
+  });
 
   // Recorded clips: honour Reduce Motion, and only play while on screen.
   document.querySelectorAll('.clip video').forEach(v => {
